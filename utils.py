@@ -1,5 +1,6 @@
 import numpy as np
 import scipy.linalg as ln
+import matplotlib.pyplot as plt
 
 
 def array_vector_product(A, x):
@@ -376,3 +377,197 @@ def GROU(f, A, e, tol, rank_max, itera_max, N, inner_procedure):
         print('Número de mejoras en residuo: ', OK)
         print('Número de empeoramientos en residuo: ', MAL)
         return 'Interrupted'
+
+# define the function f
+def f(x,y,z):
+    sin_x = np.sin(2*np.pi*x - np.pi)
+    sin_y = np.sin(2*np.pi*y - np.pi)
+    sin_z = np.sin(2*np.pi*z - np.pi)
+    return 3*((2*np.pi)**2)*sin_x*sin_y*sin_z
+
+# define the analytical solution
+def u(x,y,z):
+    sin_x = np.sin(2*np.pi*x - np.pi)
+    sin_y = np.sin(2*np.pi*y - np.pi)
+    sin_z = np.sin(2*np.pi*z - np.pi)
+    return sin_x*sin_y*sin_z
+
+# this function constructs matrices A and B
+def construct_matrices(N):
+    # first construct A
+    h = 1.0/(N-1)
+    A = np.zeros((N,N))
+    A[0][0] = 2.0/h
+    A[0][1] = -1.0/h
+    A[N-1][N-2] = -1.0/h
+    A[N-1][N-1] = 2.0/h
+    for i in range(1,N-1):
+        A[i][i-1] = -1.0/h
+        A[i][i] = 2.0/h
+        A[i][i+1] = -1.0/h
+    # then construct B
+    B = np.zeros((N,N))
+    B[0][0] = 2.0*h/3.0
+    B[0][1] = h/6.0
+    B[N-1][N-2] = h/6.0
+    B[N-1][N-1] = 2.0*h/3.0
+    for i in range(1,N-1):
+        B[i][i-1] = h/6.0
+        B[i][i] = 2.0*h/3.0
+        B[i][i+1] = h/6.0
+    return A, B
+def construye_f(N):
+    h = 1.0/(N-1)
+    f_vec = np.zeros(N**3)
+    for i in range(N):
+        for j in range(N):
+            for k in range(N):
+                f_vec[i + j*N + k*N**2] = f(k*h, j*h, i*h)
+    return f_vec
+
+def construye_u(N):
+    h = 1.0/(N-1)
+    u_vec = np.zeros(N**3)
+    for i in range(N):
+        for j in range(N):
+            for k in range(N):
+                u_vec[i + j*N + k*N**2] = u(k*h, j*h, i*h)
+    return u_vec
+# this function solves the Poisson equation
+def solve_poisson_linalg(N):
+    # construct matrices A and B
+    A, B = construct_matrices(N)
+    # construct the left hand side
+    LHS = kronecker_product_l([A,B,B]) + kronecker_product_l([B,A,B]) + kronecker_product_l([B,B,A])
+    # construct the right hand side
+    h = 1.0/(N-1)
+    f_vec = construye_f(N)
+    # solve the linear system
+    u_vec = np.linalg.solve(LHS, f_vec)
+    return u_vec
+
+def relative_error(u_val, result_val):
+    print(np.linalg.norm(u_val,2), 'norm of u')
+    print(np.linalg.norm(result_val,2), 'norm of result')
+
+    a = np.linalg.norm(u_val - result_val)/np.linalg.norm(u_val)
+    print(a, 'relative error')
+    return a
+def compare_analytical(result, N):
+    h = 1.0/(N-1)
+    u_vec = construye_u(N)
+
+    return relative_error(np.array(u_vec), np.array(result))
+
+def plot_error():
+    N_list = [4,5,6,7,8,9,10,11,12,13,14,15]
+    error_list = []
+    for N in N_list:
+        result = solve_poisson_linalg(N)
+        error_list.append(compare_analytical(result,N))
+    plt.loglog(N_list, error_list, 'o-')
+    plt.xlabel('N')
+    plt.ylabel('Relative error')
+    plt.title('Relative error vs. N')
+    plt.show()
+
+def solve_poisson_grou(N):
+    # construct matrices A and B
+    A, B = construct_matrices(N)
+    # construct the left hand side
+    LHS = kronecker_product_l([A,B,B]) + kronecker_product_l([B,A,B]) + kronecker_product_l([B,B,A])
+
+    # construct the right hand side
+    f_vec = construye_f(N)
+    itera_max = 20
+    tol = 2.22E-18
+    rank_max = 1000
+    e = 5.0E-200
+    # solve the linear system
+    u_vec, resto = GROU(f_vec, LHS, e, tol, rank_max, itera_max, N=[N,N,N], inner_procedure=ALS3)
+    return u_vec, resto, LHS
+
+
+
+def plot_error_grou():
+    N_list = [4,5,6,7,8,9,10,11,12]
+    error_list = []
+
+    for N in N_list:
+        f_vec = construye_f(N).reshape(N**3,1)
+        result, r, LHS = solve_poisson_grou(N)
+        error_list.append(np.linalg.norm(np.dot(LHS, result) - f_vec))
+    plt.semilogy(N_list, error_list, 'o-')
+    plt.xlabel('N')
+    plt.ylabel('Relative error')
+    plt.title('Relative error vs. N')
+    plt.show()
+
+
+def plot_error_comp():
+    N_list = [10]
+    error_list = []
+    error_list_grou = []
+    for N in N_list:
+        A, B = construct_matrices(N)
+        # construct the left hand side
+        LHS = kronecker_product_l([A, B, B]) + kronecker_product_l([B, A, B]) + kronecker_product_l([B, B, A])
+
+        result = solve_poisson_linalg(N)
+        error_list.append(compare_analytical(np.dot(LHS,result), N))
+        try:
+            result_grou = solve_poisson_grou(N)[0]
+            error_list_grou.append(compare_analytical(np.dot(LHS,result_grou), N))
+        except:
+            print('GROU failed')
+            error_list_grou.append(0)
+    plt.loglog(N_list, error_list, 'o-', label='ALS3')
+    plt.loglog(N_list, error_list_grou, 'o-', label='GROU')
+    plt.xlabel('N')
+    plt.ylabel('error')
+    plt.title('error vs. N')
+    plt.legend()
+    plt.show()
+
+
+
+def plot_error_grou_sep(lista_N):
+    N_list = lista_N
+    error_list = []
+
+    for N in N_list:
+        f_vec = construye_f(N).reshape(N**3,1)
+        result, r, LHS = solve_poisson_grou_sep(N)
+        LHS_e = conforma_matriz(LHS, [N,N,N])
+        error_list.append(np.linalg.norm(np.dot(LHS_e, result) - f_vec))
+    plt.semilogy(N_list, error_list, 'o-')
+    plt.xlabel('N')
+    plt.ylabel('Relative error')
+    plt.title('Relative error vs. N')
+    plt.show()
+
+def imprime_LHS(LHS):
+    LHS_e = separated_product(LHS)
+    plt.spy(LHS_e)
+    plt.show()
+    return None
+
+
+def solve_poisson_grou_sep(N):
+    # construct matrices A and B
+    A, B = construct_matrices(N)
+    # construct the left hand side
+    LHS = [[A,B,B],[B,A,B],[B,B,A]]
+    imprime_LHS(LHS)
+    # construct the right hand side
+    f_vec = construye_f(N)
+    itera_max = 10
+    tol = 2.22E-18
+    rank_max = 1000
+    e = 5.0E-200
+    # solve the linear system
+    u_vec, resto = GROU_sep(f_vec, LHS, e, tol, rank_max, itera_max, N=[N, N, N], inner_procedure=ALS4)
+    return u_vec, resto
+
+
+
